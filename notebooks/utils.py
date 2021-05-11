@@ -22,7 +22,7 @@ class FileLoader():
             file_metadata = self.parse_filename(f)
 
             full_path = f"{self.path}{f}"
-            file_metadata['image'] = io.imread(full_path, as_gray=True)
+            file_metadata['image'] = io.imread(full_path)
             new_rows.append(file_metadata)
 
         return pd.DataFrame(new_rows)

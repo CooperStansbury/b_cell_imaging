@@ -11,6 +11,9 @@ from skimage.feature import blob_dog, blob_log, blob_doh
 from skimage.morphology import reconstruction
 from skimage import color, morphology
 from skimage import exposure
+from skimage import (
+    color, feature, filters, measure, morphology, segmentation, util
+)
 
 import matplotlib.pyplot as plt
 import matplotlib
@@ -30,10 +33,10 @@ def preprocess_image(image_in, channel):
     """
 
     params = {
-        'Ch2-T1' : {'gain' : 0.99},
-        'ChS2-T2' : {'gain' : 2.7},
-        'Ch1-T4' : {'gain' : 1.1},
-        'ChS1-T3' : {'gain' : 0.8},
+        'Ch2-T1' : {'gain' : 0.99, 'dilate' : True, 'tophat': True, 'equalize': -1},
+        'ChS2-T2' : {'gain' : 1.2, 'dilate' : True, 'tophat': True, 'equalize': 0.2},
+        'Ch1-T4' : {'gain' : 1.1, 'dilate' : True, 'tophat': True, 'equalize': -1},
+        'ChS1-T3' : {'gain' : 0.8, 'dilate' : True, 'tophat': True, 'equalize': -1},
     }
 
     channel_params = params[channel]
@@ -41,27 +44,25 @@ def preprocess_image(image_in, channel):
     # and convert to normalize greyscale
     image = rgb2gray(image_in) # convert image to grey scale
 
+    # histogram equalization
+    if channel_params['equalize'] > 0:
+        image = exposure.equalize_adapthist(image, clip_limit=channel_params['equalize'])
+
     # Logarithmic  pixel intensity correction
     image = exposure.adjust_log(image, channel_params['gain'])
 
     # dialate the image
-    seed = np.copy(image)
-    seed[1:-1, 1:-1] = image.min()
-    mask = image
-    image = image - reconstruction(seed, mask, method='dilation')
-
-    # # use hard threshold
-    # u, s, vt = np.linalg.svd(image_gray)
-    # r = (np.sqrt(4) / 3) * np.median(s)
-    # s_ind = np.argwhere(s >= r)
-    # k = np.max(s_ind)
-    # image = np.dot(u[:,0:k] * s[0:k,], vt[0:k,])
+    if channel_params['dilate']:
+        seed = np.copy(image)
+        seed[1:-1, 1:-1] = image.min()
+        mask = image
+        image = image - reconstruction(seed, mask, method='dilation')
 
     # top hatting small objects
-    selem = morphology.disk(1)
-    res = morphology.white_tophat(image, selem)
-    image = image - res
-
+    if channel_params['tophat']:
+        selem = morphology.disk(1)
+        res = morphology.white_tophat(image, selem)
+        image = image - res
 
     return image
     
@@ -77,14 +78,13 @@ def get_LoG_blobs(image, channel):
         : blobs (np.array): first two columns are center coords, 3rd is radius 
     """
     params = {
-        'Ch2-T1' : {'min_sigma' : 5, 'max_sigma' : 20, 'num_sigma' : 3, 'threshold' : 0.1},
-        'ChS2-T2' : {'min_sigma' : 5, 'max_sigma' : 20, 'num_sigma' : 5, 'threshold' : 0.09},
-        'Ch1-T4' : {'min_sigma' : 5, 'max_sigma' : 20, 'num_sigma' : 3, 'threshold' : 0.12},
-        'ChS1-T3' : {'min_sigma' : 8, 'max_sigma' : 20, 'num_sigma' : 3, 'threshold' : 0.17},
+        'Ch2-T1' : {'min_sigma' : 7, 'max_sigma' : 20, 'num_sigma' : 3, 'threshold' : 0.09},
+        'ChS2-T2' : {'min_sigma' : 7, 'max_sigma' : 20, 'num_sigma' : 5, 'threshold' : 0.1},
+        'Ch1-T4' : {'min_sigma' : 7, 'max_sigma' : 20, 'num_sigma' : 3, 'threshold' : 0.12},
+        'ChS1-T3' : {'min_sigma' : 7, 'max_sigma' : 20, 'num_sigma' : 3, 'threshold' : 0.15},
     }
     channel_params = params[channel]
     blobs_log = blob_log(image, **channel_params)
-
     # compute the radii
     blobs_log[:, 2] = blobs_log[:, 2] * sqrt(2)
 
@@ -104,3 +104,88 @@ def plot_LoG_blobs(image, blobs):
         ax.add_patch(c)
 
     return plt
+
+
+def plot_row(row, save=True):
+    """A function to create three images based on an input 
+    images. (1) the raw image, (2) the processed image, (3)
+    the image overlaid with blobs.
+
+    args:
+        : row (row of pd.DataFrame)
+        : save (bool): if true, saves an image for future ref
+    """
+
+    img = row['image']
+    filname = row['filename']
+    channel = row['channel']
+
+    matplotlib.rcParams['figure.dpi'] = 300
+    f, (ax1, ax2, ax3) = plt.subplots(1, 3, sharey=True, figsize=(20, 20))
+    ax1.imshow(img) 
+    ax1.set_title(f"Raw Image: {filname}")
+
+    img = preprocess_image(img, channel)
+    ax2.imshow(img, cmap='magma')
+    ax2.set_title("Processed Image")
+
+    blobs = get_LoG_blobs(img, channel)
+    ax3.imshow(img)
+
+    for blob in blobs:
+        y, x, r = blob
+        c = plt.Circle((x, y), r, color='red', linewidth=2, fill=False)
+        ax3.add_patch(c)
+
+    ax3.set_title(f"N cells: {len(blobs)}")
+
+    if save:
+        outpath = f"figs/{filname}.png"
+        plt.savefig(outpath, bbox_inches='tight') 
+        print(f"Saved: {outpath}")
+
+
+def plot_contour(row, save=True):
+    """A function to plot the contour of a given channel
+    
+    args:
+        :row (pd.Series row)
+        : save (bool): if true, will save plot
+    """
+    image = rgb2gray(row['image'])
+    filname = row['filename']
+
+    fig, ax = plt.subplots(figsize=(5, 5))
+    qcs = ax.contour(image, origin='image')
+    ax.set_title(f'{filname} Contour plot')
+    plt.show()
+
+    if save:
+        outpath = f"figs/{filname}_contour.png"
+        plt.savefig(outpath, bbox_inches='tight') 
+        print(f"Saved: {outpath}")
+
+
+def plot_Multi_Otsu(row, classes=2, save=False):
+    """A function to use binary Multi-Otsu thresholding
+    """
+    image = preprocess_image(row['image'], row['channel'])
+
+    filname = row['filename']
+    fig, ax = plt.subplots(figsize=(5, 5))
+
+    thresholds = filters.threshold_multiotsu(image, classes=classes)
+    regions = np.digitize(image, bins=thresholds)
+
+    cells = image > thresholds[0]
+    labeled_cells = measure.label(cells)
+
+    ax.imshow(regions)
+    ax.set_title(f'Multi-Otsu thresholding (n = {labeled_cells.max()})')
+    ax.axis('off')
+    plt.show()
+
+    if save:
+        outpath = f"figs/{filname}_multi_otsu.png"
+        plt.savefig(outpath, bbox_inches='tight') 
+        print(f"Saved: {outpath}")
