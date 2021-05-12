@@ -37,3 +37,15 @@ class FileLoader():
         }
         self.path = dir_path
         self.df = self.load_imgs_from_dir()
+
+        
+        
+def clear_figs(figpath="figs/*"):
+    """A function to clear the figure folder """
+    import os
+    import glob
+
+    files = glob.glob(figpath)
+    for f in files:
+        os.remove(f)
+    print(f"Cleared: {figpath}")

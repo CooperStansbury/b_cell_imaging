@@ -3,6 +3,8 @@ import numpy as np
 import os
 from math import sqrt
 import numba
+from scipy.spatial import distance_matrix
+
 
 import skimage
 from skimage import io
@@ -18,6 +20,8 @@ from skimage import (
 import matplotlib.pyplot as plt
 import matplotlib
 import seaborn as sns
+
+DPI = 120
 
 
 def preprocess_image(image_in, channel):
@@ -120,7 +124,7 @@ def plot_row(row, save=True):
     filname = row['filename']
     channel = row['channel']
 
-    matplotlib.rcParams['figure.dpi'] = 300
+    matplotlib.rcParams['figure.dpi'] = DPI
     f, (ax1, ax2, ax3) = plt.subplots(1, 3, sharey=True, figsize=(20, 20))
     ax1.imshow(img) 
     ax1.set_title(f"Raw Image: {filname}")
@@ -187,5 +191,72 @@ def plot_Multi_Otsu(row, classes=2, save=False):
 
     if save:
         outpath = f"figs/{filname}_multi_otsu.png"
+        plt.savefig(outpath, bbox_inches='tight') 
+        print(f"Saved: {outpath}")
+
+        
+        
+def get_close_points(blobs1, blobs2, threshold):
+    """A function to find points which are closer
+    
+    args:
+        : blobs1 (array): blobs from group 1
+        : blobs2 (array): blobs from group 2
+        : threshold (float): threshold for points considered close
+    
+    returns:
+        : close_points (np.array): indices of blob1 and blob2 considered close
+    """
+    
+    # compute full euclidean distance matrix
+    dists = distance_matrix(blobs1, blobs2)
+    
+    # # histogram of dists to choose the threshold 
+    # sns.histplot(np.triu(dists, k=1).flatten(), bins=100)
+
+    close_points = np.argwhere((dists < threshold) & (dists != 0))
+    return close_points
+
+
+def plot_overlap(df, color1, color2, threshold=10, save=False):
+    """A function to resolve overlapping cells from each of 4 channels 
+    
+    args:
+        : df (pd.DataFrame): a subset with detected blobs for each channel
+        : color1 (str): color one
+        : color2 (str):L color two
+        : threshold (int): the distance threshold for points to be condisidered close
+        : save (bool): is true, saves the image
+    """
+    c1 = np.asarray(df[df['channel_color'] == color1]['LoG_blobs'].iloc[0])
+    c2 = np.asarray(df[df['channel_color'] == color2]['LoG_blobs'].iloc[0])
+    
+    group = df['group'].unique()
+    day = df['day'].unique()
+    
+    close_pts = get_close_points(c1[:, 0:2], c2[:, 0:2], threshold)
+    
+    matplotlib.rcParams['figure.dpi'] = DPI
+    fig, ax = plt.subplots(figsize=(8, 8))
+    ax.set_xlim([0,1024])
+    ax.set_ylim([0,1024])
+    
+    for i, j in close_pts:
+        ax.scatter(c1[i, 1], c1[i, 0], 
+           s=c1[i, 2]**2, 
+           marker='o', 
+           edgecolor='white',
+           alpha=0.5,
+           color=color1)
+        
+        ax.scatter(c2[j, 1], c2[j, 0], 
+           s=c2[j, 2]**2, 
+           marker='o', 
+           edgecolor='white',
+           alpha=0.5,
+           color=color2)
+        
+    if save:
+        outpath = f"figs/{group}_day_{day}_{c1}{c2}_overlap.png"
         plt.savefig(outpath, bbox_inches='tight') 
         print(f"Saved: {outpath}")
