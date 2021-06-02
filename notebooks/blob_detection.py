@@ -241,22 +241,44 @@ def plot_overlap(df, color1, color2, threshold=10, save=False):
     ax.set_xlim([0,1024])
     ax.set_ylim([0,1024])
     
+    count = 0
     for i, j in close_pts:
-        ax.scatter(c1[i, 1], c1[i, 0], 
-           s=c1[i, 2]**2, 
-           marker='o', 
-           edgecolor='white',
-           alpha=0.5,
-           color=color1)
+        count += 1
         
-        ax.scatter(c2[j, 1], c2[j, 0], 
-           s=c2[j, 2]**2, 
-           marker='o', 
-           edgecolor='white',
-           alpha=0.5,
-           color=color2)
+        if count == 1:
+            ax.scatter(c1[i, 1], c1[i, 0], 
+               s=c1[i, 2]**2, 
+               marker='o', 
+               edgecolor='white',
+               alpha=0.5,
+               color=color1,
+               label=color1)
+
+            ax.scatter(c2[j, 1], c2[j, 0], 
+               s=c2[j, 2]**2, 
+               marker='o', 
+               edgecolor='white',
+               alpha=0.5,
+               color=color2,
+               label=color2)
+        else:
+            ax.scatter(c1[i, 1], c1[i, 0], 
+               s=c1[i, 2]**2, 
+               marker='o', 
+               edgecolor='white',
+               alpha=0.5,
+               color=color1)
+
+            ax.scatter(c2[j, 1], c2[j, 0], 
+               s=c2[j, 2]**2, 
+               marker='o', 
+               edgecolor='white',
+               alpha=0.5,
+               color=color2)
         
+    plt.title(f"{group[0]}_day_{day[0]}_{color1}{color2}")
+    plt.legend()
     if save:
-        outpath = f"figs/{group}_day_{day}_{c1}{c2}_overlap.png"
+        outpath = f"figs/{group[0]}_day_{day[0]}_{color1}_{color2}_overlap.png"
         plt.savefig(outpath, bbox_inches='tight') 
         print(f"Saved: {outpath}")
